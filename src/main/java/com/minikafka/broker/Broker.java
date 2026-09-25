@@ -12,15 +12,21 @@ import java.util.Map;
  */
 public class Broker {
     private Map<String, Topic> topics;
+    private Map<String, Integer> topicPartitionCounters; // Tracks next partition for round-robin
 
     public Broker() {
         this.topics = new HashMap<>();
+        this.topicPartitionCounters = new HashMap<>();
     }
 
     /**
      * Creates a new topic with the specified number of partitions.
+     * Validates topic name and partition count.
      */
     public void createTopic(String topicName, int numPartitions) {
+        if (topicName == null || topicName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Topic name cannot be null or empty");
+        }
         if (topics.containsKey(topicName)) {
             throw new IllegalArgumentException("Topic already exists: " + topicName);
         }
@@ -30,6 +36,7 @@ public class Broker {
         
         Topic topic = new Topic(topicName, numPartitions);
         topics.put(topicName, topic);
+        topicPartitionCounters.put(topicName, 0); // Initialize partition counter to 0
         System.out.println("Created topic: " + topicName + " with " + numPartitions + " partitions");
     }
 
@@ -60,16 +67,28 @@ public class Broker {
 
     /**
      * Sends a message to a specific topic.
-     * Uses round-robin to select a partition.
+     * Uses round-robin to select a partition for message distribution.
+     * Validates topic name and message before sending.
      */
     public void send(String topicName, String message) {
+        if (topicName == null || topicName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Topic name cannot be null or empty");
+        }
+        if (message == null || message.trim().isEmpty()) {
+            throw new IllegalArgumentException("Message cannot be null or empty");
+        }
+        
         Topic topic = getTopic(topicName);
         
-        // Simple round-robin partition selection (always use partition 0 for now)
-        // Will be improved in Day 3
-        Partition partition = topic.getPartition(0);
+        // Round-robin partition selection
+        int nextPartitionId = topicPartitionCounters.get(topicName);
+        Partition partition = topic.getPartition(nextPartitionId);
         partition.appendMessage(message);
         
-        System.out.println("Message sent to topic '" + topicName + "': " + message);
+        // Update partition counter for next message (round-robin)
+        int numPartitions = topic.getNumPartitions();
+        topicPartitionCounters.put(topicName, (nextPartitionId + 1) % numPartitions);
+        
+        System.out.println("Message sent to topic '" + topicName + "', partition " + nextPartitionId + ": " + message);
     }
 }

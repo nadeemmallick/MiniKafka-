@@ -14,8 +14,15 @@ public class Producer {
 
     /**
      * Sends a message to a specific topic.
+     * Validates topic name and message before sending.
      */
     public void send(String topicName, String message) {
+        if (topicName == null || topicName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Topic name cannot be null or empty");
+        }
+        if (message == null || message.trim().isEmpty()) {
+            throw new IllegalArgumentException("Message cannot be null or empty");
+        }
         broker.send(topicName, message);
     }
 }

@@ -12,6 +12,13 @@ public class Topic {
     private List<Partition> partitions;
 
     public Topic(String name, int numPartitions) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("Topic name cannot be null or empty");
+        }
+        if (numPartitions <= 0) {
+            throw new IllegalArgumentException("Number of partitions must be positive");
+        }
+        
         this.name = name;
         this.partitions = new ArrayList<>();
         

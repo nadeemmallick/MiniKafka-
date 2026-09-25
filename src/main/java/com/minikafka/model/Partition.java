@@ -24,8 +24,12 @@ public class Partition {
 
     /**
      * Appends a message to this partition and assigns it an offset.
+     * Validates message value before appending.
      */
     public void appendMessage(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalArgumentException("Message value cannot be null or empty");
+        }
         Message message = new Message(currentOffset, value);
         messages.add(message);
         currentOffset++;
