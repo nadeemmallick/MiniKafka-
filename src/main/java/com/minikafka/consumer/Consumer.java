@@ -5,30 +5,33 @@ import com.minikafka.model.Message;
 import com.minikafka.model.Partition;
 import com.minikafka.model.Topic;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Consumer that reads messages from the broker.
  * Supports reading from specific partitions with offset tracking per partition.
+ * Thread-safe for concurrent consumption.
  */
 public class Consumer {
-    private Broker broker;
-    private String subscribedTopic;
-    private Map<Integer, Long> partitionOffsets; // Track offset per partition
+    private final Broker broker;
+    private volatile String subscribedTopic;
+    private final ConcurrentMap<Integer, AtomicLong> partitionOffsets; // Thread-safe offset tracking
 
     public Consumer(Broker broker) {
         this.broker = broker;
         this.subscribedTopic = null;
-        this.partitionOffsets = new HashMap<>();
+        this.partitionOffsets = new ConcurrentHashMap<>();
     }
 
     /**
      * Subscribes to a specific topic.
      * Validates topic name and existence before subscription.
      * Initializes offset tracking for all partitions in the topic.
+     * Thread-safe using synchronized block for topic change.
      */
-    public void subscribe(String topicName) {
+    public synchronized void subscribe(String topicName) {
         if (topicName == null || topicName.trim().isEmpty()) {
             throw new IllegalArgumentException("Topic name cannot be null or empty");
         }
@@ -37,11 +40,11 @@ public class Consumer {
         }
         this.subscribedTopic = topicName;
         
-        // Initialize offset tracking for all partitions
+        // Initialize offset tracking for all partitions with AtomicLong
         Topic topic = broker.getTopic(topicName);
         partitionOffsets.clear();
         for (int i = 0; i < topic.getNumPartitions(); i++) {
-            partitionOffsets.put(i, 0L);
+            partitionOffsets.put(i, new AtomicLong(0));
         }
         
         System.out.println("Consumer subscribed to topic: " + topicName + " with " + topic.getNumPartitions() + " partitions");
@@ -57,7 +60,7 @@ public class Consumer {
 
     /**
      * Polls for the next message from a specific partition of the subscribed topic.
-     * Uses offset tracking per partition.
+     * Uses thread-safe offset tracking per partition with AtomicLong.
      */
     public Message poll(int partitionId) {
         if (subscribedTopic == null) {
@@ -67,8 +70,14 @@ public class Consumer {
         Topic topic = broker.getTopic(subscribedTopic);
         Partition partition = topic.getPartition(partitionId);
         
-        // Get current offset for this partition
-        long currentOffset = partitionOffsets.getOrDefault(partitionId, 0L);
+        // Get current offset for this partition using AtomicLong
+        AtomicLong offsetCounter = partitionOffsets.get(partitionId);
+        if (offsetCounter == null) {
+            offsetCounter = new AtomicLong(0);
+            partitionOffsets.put(partitionId, offsetCounter);
+        }
+        
+        long currentOffset = offsetCounter.get();
 
         if (currentOffset >= partition.getMessageCount()) {
             return null; // No more messages available in this partition
@@ -76,17 +85,19 @@ public class Consumer {
 
         Message message = partition.getMessage(currentOffset);
         
-        // Update offset for this partition
-        partitionOffsets.put(partitionId, currentOffset + 1);
+        // Atomically increment offset for this partition
+        offsetCounter.incrementAndGet();
         
         return message;
     }
 
     /**
      * Gets the current offset for a specific partition.
+     * Thread-safe read using AtomicLong.
      */
     public long getCurrentOffset(int partitionId) {
-        return partitionOffsets.getOrDefault(partitionId, 0L);
+        AtomicLong offsetCounter = partitionOffsets.get(partitionId);
+        return offsetCounter != null ? offsetCounter.get() : 0L;
     }
 
     /**
@@ -98,17 +109,24 @@ public class Consumer {
 
     /**
      * Resets the offset for a specific partition (for testing or re-reading).
+     * Thread-safe using AtomicLong.
      */
     public void seekToBeginning(int partitionId) {
-        partitionOffsets.put(partitionId, 0L);
+        AtomicLong offsetCounter = partitionOffsets.get(partitionId);
+        if (offsetCounter != null) {
+            offsetCounter.set(0);
+        } else {
+            partitionOffsets.put(partitionId, new AtomicLong(0));
+        }
     }
 
     /**
      * Resets all offsets to beginning (for testing or re-reading).
+     * Thread-safe operation.
      */
     public void seekToBeginningAll() {
-        for (Integer partitionId : partitionOffsets.keySet()) {
-            partitionOffsets.put(partitionId, 0L);
+        for (AtomicLong offsetCounter : partitionOffsets.values()) {
+            offsetCounter.set(0);
         }
     }
 }

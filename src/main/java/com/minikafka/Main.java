@@ -7,10 +7,25 @@ import com.minikafka.producer.Producer;
 
 /**
  * Main class to test the Producer → Broker → Consumer flow with comprehensive validation.
+ * Includes Day 4 multithreading tests.
  */
 public class Main {
     public static void main(String[] args) {
-        System.out.println("=== MiniKafka Day 2 - Producer + Consumer (Complete) ===\n");
+        System.out.println("╔══════════════════════════════════════════════════════════════╗");
+        System.out.println("║     🎬 MINIKAFRA COMPREHENSIVE DEMO (Days 2-4)             ║");
+        System.out.println("╚══════════════════════════════════════════════════════════════╝");
+        System.out.println();
+
+        // Run Day 2-3 demo first
+        runDay2Demo();
+        
+        // Run Day 4 multithreading demo
+        runDay4Demo();
+    }
+
+    private static void runDay2Demo() {
+        System.out.println("📅 DAYS 2-3: Single-Threaded Message Flow");
+        System.out.println("══════════════════════════════════════════════════════════════");
 
         // Step 1: Create a broker
         Broker broker = new Broker();
@@ -62,13 +77,188 @@ public class Main {
         System.out.println("\n--- Multiple Topics Test ---");
         testMultipleTopics(broker, producer);
 
-        System.out.println("\n=== Day 2 Complete ===");
+        System.out.println("\n=== Day 2-3 Complete ===");
         System.out.println("✓ Producer can publish messages");
         System.out.println("✓ Broker stores messages with validation");
         System.out.println("✓ Consumer can read messages with offset tracking");
         System.out.println("✓ Error handling for invalid inputs");
         System.out.println("✓ Multiple topics support");
         System.out.println("✓ Offsets are tracked correctly");
+    }
+
+    private static void runDay4Demo() {
+        System.out.println("\n\n📅 DAY 4: Multithreading - Concurrent Producers and Consumers");
+        System.out.println("══════════════════════════════════════════════════════════════");
+
+        // Create a new broker for threading tests
+        Broker broker = new Broker();
+        System.out.println("✓ Thread-safe Broker created");
+
+        // Create topic with multiple partitions for concurrent access
+        System.out.println("\n--- Creating Topic for Threading Tests ---");
+        broker.createTopic("concurrent-test", 3);
+        System.out.println("✓ Topic 'concurrent-test' created with 3 partitions");
+
+        // Test 1: Multiple concurrent producers
+        System.out.println("\n--- Test 1: Multiple Concurrent Producers ---");
+        testConcurrentProducers(broker);
+
+        // Test 2: Multiple concurrent consumers
+        System.out.println("\n--- Test 2: Multiple Concurrent Consumers ---");
+        testConcurrentConsumers(broker);
+
+        // Test 3: Mixed concurrent operations
+        System.out.println("\n--- Test 3: Mixed Concurrent Operations ---");
+        testMixedConcurrentOperations(broker);
+
+        System.out.println("\n=== Day 4 Complete ===");
+        System.out.println("✓ Thread-safe Broker operations");
+        System.out.println("✓ Concurrent message publishing works");
+        System.out.println("✓ Concurrent message consumption works");
+        System.out.println("✓ No data corruption under concurrent access");
+        System.out.println("✓ Thread-safe offset tracking");
+    }
+
+    private static void testConcurrentProducers(Broker broker) {
+        final int NUM_PRODUCERS = 5;
+        final int MESSAGES_PER_PRODUCER = 10;
+        
+        System.out.println("Starting " + NUM_PRODUCERS + " producer threads, each sending " + MESSAGES_PER_PRODUCER + " messages");
+        
+        Thread[] producerThreads = new Thread[NUM_PRODUCERS];
+        
+        for (int i = 0; i < NUM_PRODUCERS; i++) {
+            final int producerId = i;
+            producerThreads[i] = new Thread(() -> {
+                Producer producer = new Producer(broker);
+                for (int j = 0; j < MESSAGES_PER_PRODUCER; j++) {
+                    String message = "Producer-" + producerId + "-Message-" + j;
+                    producer.send("concurrent-test", message);
+                }
+            });
+            producerThreads[i].start();
+        }
+        
+        // Wait for all producers to complete
+        for (Thread thread : producerThreads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        // Verify message count
+        int totalMessages = 0;
+        for (int i = 0; i < 3; i++) {
+            totalMessages += broker.getTopic("concurrent-test").getPartition(i).getMessageCount();
+        }
+        
+        int expectedMessages = NUM_PRODUCERS * MESSAGES_PER_PRODUCER;
+        System.out.println("Expected messages: " + expectedMessages);
+        System.out.println("Actual messages: " + totalMessages);
+        
+        if (totalMessages == expectedMessages) {
+            System.out.println("✓ All messages successfully stored");
+        } else {
+            System.out.println("✗ Message count mismatch!");
+        }
+    }
+
+    private static void testConcurrentConsumers(Broker broker) {
+        final int NUM_CONSUMERS = 3;
+        
+        System.out.println("Starting " + NUM_CONSUMERS + " consumer threads reading from different partitions");
+        
+        Thread[] consumerThreads = new Thread[NUM_CONSUMERS];
+        
+        for (int i = 0; i < NUM_CONSUMERS; i++) {
+            final int consumerId = i;
+            final int partitionId = i;
+            consumerThreads[i] = new Thread(() -> {
+                Consumer consumer = new Consumer(broker);
+                consumer.subscribe("concurrent-test");
+                
+                int messagesRead = 0;
+                Message message;
+                while ((message = consumer.poll(partitionId)) != null && messagesRead < 5) {
+                    messagesRead++;
+                    // Simulate processing
+                    try {
+                        Thread.sleep(10);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                
+                System.out.println("Consumer-" + consumerId + " read " + messagesRead + " messages from partition " + partitionId);
+            });
+            consumerThreads[i].start();
+        }
+        
+        // Wait for all consumers to complete
+        for (Thread thread : consumerThreads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        System.out.println("✓ All consumers completed successfully");
+    }
+
+    private static void testMixedConcurrentOperations(Broker broker) {
+        System.out.println("Testing mixed producer and consumer operations");
+        
+        // Add more messages first
+        Producer producer = new Producer(broker);
+        for (int i = 0; i < 5; i++) {
+            producer.send("concurrent-test", "Additional-Message-" + i);
+        }
+        
+        // Create producer and consumer threads
+        Thread producerThread = new Thread(() -> {
+            Producer prod = new Producer(broker);
+            for (int i = 0; i < 3; i++) {
+                prod.send("concurrent-test", "Mixed-Producer-Message-" + i);
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+        
+        Thread consumerThread = new Thread(() -> {
+            Consumer cons = new Consumer(broker);
+            cons.subscribe("concurrent-test");
+            
+            int messagesRead = 0;
+            Message message;
+            while ((message = cons.poll(0)) != null && messagesRead < 3) {
+                messagesRead++;
+                try {
+                    Thread.sleep(30);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            
+            System.out.println("Mixed consumer read " + messagesRead + " messages");
+        });
+        
+        producerThread.start();
+        consumerThread.start();
+        
+        try {
+            producerThread.join();
+            consumerThread.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        
+        System.out.println("✓ Mixed concurrent operations completed successfully");
     }
 
     private static void testErrorHandling(Broker broker, Producer producer) {

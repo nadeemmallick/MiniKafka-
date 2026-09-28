@@ -6,11 +6,13 @@ import java.util.List;
 /**
  * Represents a partition within a topic.
  * A partition is an ordered sequence of messages.
+ * Thread-safe for concurrent message appending and reading.
  */
 public class Partition {
-    private int partitionId;
-    private List<Message> messages;
+    private final int partitionId;
+    private final List<Message> messages;
     private long currentOffset;
+    private final Object lock = new Object(); // Lock for thread safety
 
     public Partition(int partitionId) {
         this.partitionId = partitionId;
@@ -24,45 +26,61 @@ public class Partition {
 
     /**
      * Appends a message to this partition and assigns it an offset.
+     * Thread-safe using synchronized block.
      * Validates message value before appending.
      */
     public void appendMessage(String value) {
         if (value == null || value.trim().isEmpty()) {
             throw new IllegalArgumentException("Message value cannot be null or empty");
         }
-        Message message = new Message(currentOffset, value);
-        messages.add(message);
-        currentOffset++;
+        
+        synchronized (lock) {
+            Message message = new Message(currentOffset, value);
+            messages.add(message);
+            currentOffset++;
+        }
     }
 
     /**
      * Gets a message at a specific offset.
+     * Thread-safe - reads from synchronized list but doesn't modify.
      */
     public Message getMessage(long offset) {
-        if (offset < 0 || offset >= messages.size()) {
-            throw new IllegalArgumentException("Invalid offset: " + offset);
+        synchronized (lock) {
+            if (offset < 0 || offset >= messages.size()) {
+                throw new IllegalArgumentException("Invalid offset: " + offset);
+            }
+            return messages.get((int) offset);
         }
-        return messages.get((int) offset);
     }
 
     /**
      * Gets all messages in this partition.
+     * Thread-safe - returns a copy to prevent external modification.
      */
     public List<Message> getMessages() {
-        return new ArrayList<>(messages);
+        synchronized (lock) {
+            return new ArrayList<>(messages);
+        }
     }
 
     /**
      * Gets the current offset (next available offset).
+     * Thread-safe read operation.
      */
     public long getCurrentOffset() {
-        return currentOffset;
+        synchronized (lock) {
+            return currentOffset;
+        }
     }
 
     /**
      * Gets the number of messages in this partition.
+     * Thread-safe read operation.
      */
     public int getMessageCount() {
-        return messages.size();
+        synchronized (lock) {
+            return messages.size();
+        }
     }
 }
