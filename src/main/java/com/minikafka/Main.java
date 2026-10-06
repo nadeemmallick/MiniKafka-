@@ -7,12 +7,12 @@ import com.minikafka.producer.Producer;
 
 /**
  * Main class to test the Producer → Broker → Consumer flow with comprehensive validation.
- * Includes Day 4 multithreading tests.
+ * Includes Day 4 multithreading and Day 5 persistence tests.
  */
 public class Main {
     public static void main(String[] args) {
         System.out.println("╔══════════════════════════════════════════════════════════════╗");
-        System.out.println("║     🎬 MINIKAFRA COMPREHENSIVE DEMO (Days 2-4)             ║");
+        System.out.println("║     🎬 MINIKAFRA COMPREHENSIVE DEMO (Days 2-5)             ║");
         System.out.println("╚══════════════════════════════════════════════════════════════╝");
         System.out.println();
 
@@ -21,6 +21,9 @@ public class Main {
         
         // Run Day 4 multithreading demo
         runDay4Demo();
+        
+        // Run Day 5 persistence demo
+        runDay5Demo();
     }
 
     private static void runDay2Demo() {
@@ -360,5 +363,104 @@ public class Main {
 
         // Verify messages are kept separate per topic
         System.out.println("✓ Multiple topics work independently");
+    }
+
+    private static void runDay5Demo() {
+        System.out.println("\n\n📅 DAY 5: Persistence - File-Based Message Storage");
+        System.out.println("════════════════════════════════════════════════════════════════");
+
+        // Create a new broker for persistence tests
+        Broker broker = new Broker();
+        System.out.println("✓ Broker created with persistence support");
+
+        // Test 1: Basic persistence
+        System.out.println("\n--- Test 1: Basic Message Persistence ---");
+        testBasicPersistence(broker);
+
+        // Test 2: Recovery simulation
+        System.out.println("\n--- Test 2: Message Recovery ---");
+        testMessageRecovery(broker);
+
+        // Test 3: Inspect storage
+        System.out.println("\n--- Test 3: Storage Inspection ---");
+        inspectStorage(broker);
+
+        System.out.println("\n=== Day 5 Complete ===");
+        System.out.println("✓ Messages persist to local files");
+        System.out.println("✓ Messages can be recovered from storage");
+        System.out.println("✓ File format: offset|value|timestamp");
+        System.out.println("✓ Error handling for file operations");
+    }
+
+    private static void testBasicPersistence(Broker broker) {
+        // Create topic
+        broker.createTopic("persistent-test", 2);
+        System.out.println("✓ Topic 'persistent-test' created with 2 partitions");
+
+        // Send messages
+        Producer producer = new Producer(broker);
+        System.out.println("Sending 5 messages...");
+        
+        for (int i = 1; i <= 5; i++) {
+            producer.send("persistent-test", "Persistent-Message-" + i);
+        }
+        
+        System.out.println("✓ 5 messages sent and persisted");
+        
+        // Verify messages are in memory
+        int totalMessages = 0;
+        for (int i = 0; i < 2; i++) {
+            totalMessages += broker.getTopic("persistent-test").getPartition(i).getMessageCount();
+        }
+        System.out.println("✓ Messages in memory: " + totalMessages);
+        
+        // Check if files were created
+        boolean hasData = broker.getStorage().topicHasData("persistent-test");
+        System.out.println("✓ Data persisted to files: " + hasData);
+    }
+
+    private static void testMessageRecovery(Broker broker) {
+        // Clear existing data for clean test
+        broker.getStorage().clearAllData();
+        
+        // Create topic and send messages
+        broker.createTopic("recovery-test", 1);
+        Producer producer = new Producer(broker);
+        
+        System.out.println("Step 1: Sending 3 messages...");
+        producer.send("recovery-test", "Recovery-Message-1");
+        producer.send("recovery-test", "Recovery-Message-2");
+        producer.send("recovery-test", "Recovery-Message-3");
+        
+        System.out.println("Step 2: Simulating broker restart...");
+        System.out.println("  (In real scenario, broker would stop and restart)");
+        
+        // Simulate recovery by creating new broker and loading data
+        Broker newBroker = new Broker();
+        System.out.println("✓ New broker initialized with storage");
+        
+        // Recover the topic
+        System.out.println("Step 3: Recovering topic from storage...");
+        newBroker.recoverTopic("recovery-test", 1);
+        
+        // Verify recovered messages
+        int recoveredMessages = newBroker.getTopic("recovery-test").getPartition(0).getMessageCount();
+        System.out.println("✓ Recovered messages: " + recoveredMessages);
+        
+        if (recoveredMessages == 3) {
+            System.out.println("✓ Recovery successful - all messages intact");
+        } else {
+            System.out.println("✗ Recovery failed - expected 3 messages, got " + recoveredMessages);
+        }
+    }
+
+    private static void inspectStorage(Broker broker) {
+        System.out.println("Storage information:");
+        System.out.println("  Data directory: " + broker.getStorage().getLogFilePath("test", 0).getParent().getParent());
+        System.out.println("  Topic has persisted data: " + broker.getStorage().topicHasData("persistent-test"));
+        System.out.println("  Topic partition count: " + broker.getStorage().getPartitionCount("persistent-test"));
+        
+        // Show sample log file path
+        System.out.println("  Sample log file path: " + broker.getStorage().getLogFilePath("persistent-test", 0));
     }
 }

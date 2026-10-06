@@ -42,6 +42,21 @@ public class Partition {
     }
 
     /**
+     * Appends a pre-created message to this partition (for recovery from storage).
+     * Sets the partition's current offset if the message has a higher offset.
+     * Thread-safe using synchronized block.
+     */
+    public void appendMessage(Message message) {
+        synchronized (lock) {
+            messages.add(message);
+            // Update current offset if this message has a higher offset
+            if (message.getOffset() >= currentOffset) {
+                currentOffset = message.getOffset() + 1;
+            }
+        }
+    }
+
+    /**
      * Gets a message at a specific offset.
      * Thread-safe - reads from synchronized list but doesn't modify.
      */
